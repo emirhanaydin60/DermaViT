@@ -1,0 +1,14 @@
+[
+  {
+    "model": "pvt_v2_b0",
+    "best_val_loss": 0.45410213715104036,
+    "best_val_f1": 0.8411024088248146,
+    "out_dir": "results\\pvt_v2_b0"
+  },
+  {
+    "model": "convit_tiny",
+    "best_val_loss": 0.4570845897775879,
+    "best_val_f1": 0.8259816543799642,
+    "out_dir": "results\\convit_tiny"
+  }
+]
