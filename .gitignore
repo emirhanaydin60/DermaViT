@@ -1,0 +1,17 @@
+# Ignore PyTorch model weight files
+*.pth
+*.pt
+
+# Ignore Python / Jupyter artifacts
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Logs and temporary
+*.log
+*.tmp
+
+# Ignore environment files
+venv/
+env/
+.venv/
