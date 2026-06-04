@@ -30,7 +30,7 @@ from torchvision import datasets
 
 import timm
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -163,6 +163,8 @@ def evaluate_checkpoint(pth_path, test_loader, device):
         return None
 
     acc = accuracy_score(labels, preds)
+    prec = precision_score(labels, preds, average="macro", zero_division=0)
+    rec = recall_score(labels, preds, average="macro", zero_division=0)
     f1 = f1_score(labels, preds, average="macro", zero_division=0)
     cm = confusion_matrix(labels, preds)
 
@@ -170,6 +172,8 @@ def evaluate_checkpoint(pth_path, test_loader, device):
         "file": str(pth_path),
         "model_key": model_key,
         "accuracy": float(acc),
+        "macro_precision": float(prec),
+        "macro_recall": float(rec),
         "macro_f1": float(f1),
         "confusion_matrix": cm.tolist(),
         "classes": classes,
@@ -188,6 +192,79 @@ def save_confusion_matrix(cm, classes, out_path):
 
 
 # comparison plotting is handled in `plot_comparison_metrics.py`
+
+
+def load_training_artifacts(model_name, out_root):
+    """Load history.json and training_summary.json for a model if they exist."""
+    model_dir = Path(out_root) / model_name
+    history = None
+    training_summary = None
+
+    history_path = model_dir / "history.json"
+    if history_path.exists():
+        try:
+            with open(history_path, "r") as f:
+                history = json.load(f)
+        except Exception:
+            pass
+
+    summary_path = model_dir / "training_summary.json"
+    if summary_path.exists():
+        try:
+            with open(summary_path, "r") as f:
+                training_summary = json.load(f)
+        except Exception:
+            pass
+
+    return history, training_summary
+
+
+def build_overall_report(combined_metrics, out_root):
+    """Build a comprehensive per-model report merging test metrics, training info, and history."""
+    report = []
+    for res in combined_metrics:
+        model_name = infer_model_name_from_filename(res.get("file", ""))
+        if not model_name:
+            model_name = res.get("model_key", "unknown")
+
+        history, training_summary = load_training_artifacts(model_name, out_root)
+
+        entry = {
+            "model": model_name,
+            "model_key": res.get("model_key"),
+            "checkpoint_file": res.get("file"),
+            # Test set evaluation metrics
+            "test_accuracy": res.get("accuracy"),
+            "test_macro_precision": res.get("macro_precision"),
+            "test_macro_recall": res.get("macro_recall"),
+            "test_macro_f1": res.get("macro_f1"),
+            "test_confusion_matrix": res.get("confusion_matrix"),
+            "classes": res.get("classes"),
+        }
+
+        # Training metadata from training_summary.json
+        if training_summary:
+            entry.update(
+                {
+                    "epochs_trained": training_summary.get("epochs_trained"),
+                    "requested_epochs": training_summary.get("requested_epochs"),
+                    "early_stopped": training_summary.get("early_stopped"),
+                    "total_training_time_sec": training_summary.get("total_training_time_sec"),
+                    "total_training_time_min": training_summary.get("total_training_time_min"),
+                    "avg_epoch_time_min": training_summary.get("avg_epoch_time_min"),
+                    "num_parameters_millions": training_summary.get("num_parameters_millions"),
+                    "best_val_loss": training_summary.get("best_val_loss"),
+                    "best_val_f1": training_summary.get("best_val_f1"),
+                }
+            )
+
+        # Full per-epoch training history from history.json
+        if history:
+            entry["training_history"] = history
+
+        report.append(entry)
+
+    return report
 
 
 def main():
@@ -241,35 +318,46 @@ def main():
         if resolved not in tested_set:
             new_pth_files.append(p)
 
+    # Evaluate only .pth files not yet in metrics_summary.json
+    new_results = []
     if not new_pth_files:
         print("No new models to evaluate. All found .pth files are already in metrics_summary.json")
-        return
+    else:
+        for p in new_pth_files:
+            res = evaluate_checkpoint(p, test_loader, device)
+            if res is None:
+                continue
+            if res["classes"] is None:
+                res["classes"] = test_classes
+            model_name = infer_model_name_from_filename(p.name)
+            model_dir = out_root / model_name
+            model_dir.mkdir(parents=True, exist_ok=True)
+            cm_path = model_dir / "confusion_matrix_eval.png"
+            save_confusion_matrix(res["confusion_matrix"], res["classes"], cm_path)
+            new_results.append(res)
 
-    new_results = []
-    for p in new_pth_files:
-        res = evaluate_checkpoint(p, test_loader, device)
-        if res is None:
-            continue
-        # if classes missing, fill with test_classes
-        if res["classes"] is None:
-            res["classes"] = test_classes
-        model_name = infer_model_name_from_filename(p.name)
-        model_dir = out_root / model_name
-        model_dir.mkdir(parents=True, exist_ok=True)
-        cm_path = model_dir / "confusion_matrix_eval.png"
-        save_confusion_matrix(res["confusion_matrix"], res["classes"], cm_path)
-        new_results.append(res)
+    combined_metrics = existing_results + new_results
 
     if new_results:
-        combined = existing_results + new_results
         try:
             with open(metrics_path, "w") as f:
-                json.dump(combined, f, indent=2)
+                json.dump(combined_metrics, f, indent=2)
             print(f"Appended {len(new_results)} new result(s) to {metrics_path}")
         except Exception as e:
             print(f"Error writing metrics_summary.json: {e}")
-    else:
-        print("No new evaluation results produced.")
+    elif not combined_metrics:
+        print("No evaluation results available to build report.")
+        return
+
+    # Build and save the comprehensive overall report (always regenerated)
+    overall_report = build_overall_report(combined_metrics, out_root)
+    overall_report_path = out_root / "overall_report.json"
+    try:
+        with open(overall_report_path, "w") as f:
+            json.dump(overall_report, f, indent=2)
+        print(f"Overall report ({len(overall_report)} models) saved to {overall_report_path}")
+    except Exception as e:
+        print(f"Error writing overall_report.json: {e}")
 
     print("Evaluation finished. Per-model confusion matrices saved under results/<model>/")
 
