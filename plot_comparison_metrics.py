@@ -381,8 +381,8 @@ def main():
     sq_w = 0.07
     sq_h = 0.25
     # right-aligned squares
-    rect1 = mpatches.Rectangle((0.90, y1 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=colors[idx_best_acc], edgecolor="none")
-    rect2 = mpatches.Rectangle((0.90, y2 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=colors[idx_best_f1], edgecolor="none")
+    rect1 = mpatches.Rectangle((0.90, y1 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=bar_colors[idx_best_acc], edgecolor="none")
+    rect2 = mpatches.Rectangle((0.90, y2 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=bar_colors[idx_best_f1], edgecolor="none")
     box_ax.add_patch(rect1)
     box_ax.add_patch(rect2)
 
