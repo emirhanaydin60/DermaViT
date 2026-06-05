@@ -16,7 +16,6 @@ import json
 from pathlib import Path
 from statistics import mean
 
-
 LONG_FIELDS = {"classes", "test_confusion_matrix", "training_history"}
 
 
@@ -101,11 +100,7 @@ def print_compact_summary(summary: dict) -> None:
     print("")
     print("Per-model summary:")
     for item in summary["models"]:
-        print(
-            f"- {item['model']}: acc={item['test_accuracy']}, f1={item['test_macro_f1']}, "
-            f"epochs={item['epochs_trained']}, time_min={item['total_training_time_min']}, "
-            f"best_val_loss={item['best_val_loss']}"
-        )
+        print(f"- {item['model']}: acc={item['test_accuracy']}, f1={item['test_macro_f1']}, " f"epochs={item['epochs_trained']}, time_min={item['total_training_time_min']}, " f"best_val_loss={item['best_val_loss']}")
 
 
 def main() -> None:
