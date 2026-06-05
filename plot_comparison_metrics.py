@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
+import matplotlib.colors as mcolors
 import itertools
 
 
@@ -121,6 +122,21 @@ def trim_series(*series):
     return [list(s[:n]) if s is not None else None for s in series]
 
 
+def shorten_label(label, max_len=15):
+    if len(label) <= max_len:
+        return label
+    return label[:max_len] + "..."
+
+
+def adjust_color(color, factor=0.78):
+    r, g, b = mcolors.to_rgb(color)
+    return (
+        max(0.0, min(1.0, r * factor)),
+        max(0.0, min(1.0, g * factor)),
+        max(0.0, min(1.0, b * factor)),
+    )
+
+
 def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
     fig, ax = plt.subplots(figsize=(max(12, len(models_data) * 1.3), 7))
 
@@ -175,6 +191,8 @@ def plot_model_grid(models_data, out_path):
         history = item["history"]
         color = item["color"]
         label = item["label"]
+        loss_color = color
+        acc_color = adjust_color(color, 0.45)
 
         train_loss = history.get("train_loss", [])
         val_loss = history.get("val_loss", [])
@@ -194,17 +212,32 @@ def plot_model_grid(models_data, out_path):
         epochs_acc = np.arange(1, len(train_acc) + 1)
 
         ax2 = ax.twinx()
-        ax.plot(epochs_loss, train_loss, color=color, linestyle="-", linewidth=2, alpha=0.9, label="train loss")
-        ax.plot(epochs_loss, val_loss, color=color, linestyle="--", linewidth=2, alpha=0.9, label="val loss")
-        ax2.plot(epochs_acc, train_acc, color=color, linestyle=":", linewidth=2, alpha=0.9, label="train acc")
-        ax2.plot(epochs_acc, val_acc, color=color, linestyle="-.", linewidth=2, alpha=0.9, label="val acc")
+        ax.plot(epochs_loss, train_loss, color=loss_color, linestyle="-", linewidth=2, alpha=0.9, label="train loss")
+        ax.plot(epochs_loss, val_loss, color=loss_color, linestyle="--", linewidth=2, alpha=0.9, label="val loss")
+        ax2.plot(epochs_acc, train_acc, color=acc_color, linestyle=":", linewidth=2, alpha=0.9, label="train acc")
+        ax2.plot(epochs_acc, val_acc, color=acc_color, linestyle="-.", linewidth=2, alpha=0.9, label="val acc")
 
-        ax.set_title(label, fontsize=10)
+        best_loss_idx = int(np.argmin(val_loss))
+        best_epoch = best_loss_idx + 1
+        best_loss_value = val_loss[best_loss_idx]
+        ax.scatter([best_epoch], [best_loss_value], s=120, color=loss_color, edgecolors="white", linewidths=1.5, zorder=6)
+        ax.annotate(
+            f"best loss={best_loss_value:.3f}\nepoch={best_epoch}",
+            xy=(best_epoch, best_loss_value),
+            xytext=(8, -18),
+            textcoords="offset points",
+            fontsize=8,
+            color=loss_color,
+            va="top",
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=loss_color, alpha=0.85),
+        )
+
+        ax.set_title(shorten_label(label, max_len=18), fontsize=10)
         ax.set_xlabel("Epoch")
-        ax.set_ylabel("Loss", color=color)
-        ax2.set_ylabel("Acc", color=color)
-        ax.tick_params(axis="y", labelcolor=color)
-        ax2.tick_params(axis="y", labelcolor=color)
+        ax.set_ylabel("Loss", color=loss_color)
+        ax2.set_ylabel("Acc", color=acc_color)
+        ax.tick_params(axis="y", labelcolor=loss_color)
+        ax2.tick_params(axis="y", labelcolor=acc_color)
         ax.grid(True, alpha=0.2)
 
         best_loss = item.get("best_val_loss")
@@ -339,8 +372,8 @@ def main():
     # positions inside inset axes (in axes coords)
     y1 = 0.67
     y2 = 0.30
-    txt1 = f"Best Acc: {labels[idx_best_acc]} = {best_acc:.3f}"
-    txt2 = f"Best F1:  {labels[idx_best_f1]} = {best_f1:.3f}"
+    txt1 = f"Best Accuracy: {shorten_label(labels[idx_best_acc], max_len=10)} = {best_acc:.3f}"
+    txt2 = f"Best Macro F1: {shorten_label(labels[idx_best_f1], max_len=10)} = {best_f1:.3f}"
     box_ax.text(0.02, y1, txt1, ha="left", va="center", fontsize=9)
     box_ax.text(0.02, y2, txt2, ha="left", va="center", fontsize=9)
 
