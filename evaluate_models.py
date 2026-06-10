@@ -57,14 +57,13 @@ def get_test_loader(data_dir, image_size=224, batch_size=32, num_workers=4):
     return test_loader, test_ds.classes
 
 
-def find_pth_files(root_dirs=("results", "finetune/results")):
+def find_pth_files(path):
     files = []
-    for rd in root_dirs:
-        p = Path(rd)
-        if not p.exists():
-            continue
-        for fp in p.rglob("*.pth"):
-            files.append(fp)
+    p = Path(path)
+    if not p.exists():
+        return files
+    for fp in p.rglob("*.pth"):
+        files.append(fp)
     return sorted(files)
 
 
@@ -267,7 +266,7 @@ def build_overall_report(combined_metrics, out_root):
     return report
 
 
-def main():
+def main(path="results"):
     data_dir = r"C:/Users/emirh/Desktop/Projects/datasets/input_sk"
     image_size = 224
     batch_size = 32
@@ -278,12 +277,12 @@ def main():
 
     test_loader, test_classes = get_test_loader(data_dir, image_size=image_size, batch_size=batch_size, num_workers=num_workers)
 
-    pth_files = find_pth_files()
+    pth_files = find_pth_files(path)
     if not pth_files:
-        print("No .pth files found under results/ or finetune/results/")
+        print(f"No .pth files found under {path}/")
         return
 
-    out_root = Path("results")
+    out_root = Path(path)
     out_root.mkdir(exist_ok=True)
     metrics_path = out_root / "metrics_summary.json"
 
@@ -363,4 +362,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main("results_3")
