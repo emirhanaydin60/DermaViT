@@ -5,6 +5,7 @@ Outputs:
 - `results/comparison_history_loss.png`: all models' train/val loss curves on one plot.
 - `results/comparison_history_accuracy.png`: all models' train/val accuracy curves on one plot.
 - `results/comparison_history_grid.png`: one image with per-model history panels.
+- `results/comparison_confusion_matrix_grid.png`: one image with per-model confusion matrices.
 
 The script prefers `results/overall_report.json` because it can carry both
 test metrics and full training history. It falls back to older summary files
@@ -265,8 +266,90 @@ def plot_model_grid(models_data, out_path):
     plt.close(fig)
 
 
-def main():
-    results_root = Path("results")
+def plot_confusion_matrix_grid(models_data, out_path, class_names=None):
+    count = len(models_data)
+    if count == 0:
+        return
+
+    cols = 3
+    rows = math.ceil(count / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 5.2, rows * 4.8))
+    axes = np.array(axes).reshape(-1)
+
+    matrices = []
+    for item in models_data:
+        cm = item.get("confusion_matrix")
+        if cm is None:
+            continue
+        cm = np.asarray(cm)
+        if cm.size == 0:
+            continue
+        matrices.append(cm)
+
+    if not matrices:
+        plt.close(fig)
+        return
+
+    vmax = max(float(np.max(cm)) for cm in matrices)
+    if vmax <= 0:
+        vmax = 1.0
+
+    cmap = plt.get_cmap("Blues")
+
+    for idx, item in enumerate(models_data):
+        ax = axes[idx]
+        cm = item.get("confusion_matrix")
+        if cm is None:
+            ax.set_axis_off()
+            continue
+
+        cm = np.asarray(cm)
+        if cm.size == 0:
+            ax.set_axis_off()
+            continue
+
+        item_class_names = item.get("class_names") or class_names
+        if not item_class_names or len(item_class_names) != cm.shape[0]:
+            item_class_names = [str(i) for i in range(cm.shape[0])]
+
+        im = ax.imshow(cm, cmap=cmap, vmin=0, vmax=vmax)
+
+        for row_idx in range(cm.shape[0]):
+            for col_idx in range(cm.shape[1]):
+                value = cm[row_idx, col_idx]
+                text_color = "white" if value > (vmax * 0.55) else "black"
+                ax.text(col_idx, row_idx, f"{int(value)}", ha="center", va="center", fontsize=6.5, color=text_color)
+
+        ax.set_title(shorten_label(item["label"], max_len=18), fontsize=10)
+        ax.set_xticks(np.arange(len(item_class_names)))
+        ax.set_yticks(np.arange(len(item_class_names)))
+        ax.set_xticklabels(item_class_names, rotation=45, ha="right", fontsize=7)
+        ax.set_yticklabels(item_class_names, fontsize=7)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        ax.grid(False)
+
+        best_f1 = item.get("macro_f1")
+        best_acc = item.get("accuracy")
+        caption_parts = []
+        if best_acc is not None:
+            caption_parts.append(f"acc={best_acc:.3f}")
+        if best_f1 is not None:
+            caption_parts.append(f"f1={best_f1:.3f}")
+        if caption_parts:
+            ax.text(0.02, 0.02, " | ".join(caption_parts), transform=ax.transAxes, fontsize=8, va="bottom")
+
+    for idx in range(count, len(axes)):
+        axes[idx].set_axis_off()
+
+    fig.suptitle("Test confusion matrices by model", y=0.995)
+    plt.tight_layout(rect=(0, 0, 1, 0.98))
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def main(path="results"):
+    results_root = Path(path)
     results = collect_entries(results_root)
 
     if not results:
@@ -279,6 +362,12 @@ def main():
         if not history:
             continue
 
+        confusion_matrix = result.get("test_confusion_matrix")
+        if confusion_matrix is None:
+            confusion_matrix = result.get("confusion_matrix")
+
+        class_names = result.get("classes") or result.get("class_names") or result.get("class_order")
+
         processed.append(
             {
                 "label": infer_model_name(result),
@@ -288,6 +377,8 @@ def main():
                 "macro_f1": result.get("test_macro_f1", result.get("macro_f1", 0.0)),
                 "best_val_loss": result.get("best_val_loss"),
                 "epochs_trained": result.get("epochs_trained"),
+                "confusion_matrix": confusion_matrix,
+                "class_names": class_names,
             }
         )
 
@@ -299,9 +390,11 @@ def main():
     for idx, item in enumerate(processed):
         item["color"] = colors[idx]
 
-    labels = [r["label"] for r in processed]
-    accuracies = [r["accuracy"] for r in processed]
-    f1s = [r["macro_f1"] for r in processed]
+    comparison_items = sorted(processed, key=lambda item: item["macro_f1"], reverse=True)
+
+    labels = [r["label"] for r in comparison_items]
+    accuracies = [r["accuracy"] for r in comparison_items]
+    f1s = [r["macro_f1"] for r in comparison_items]
 
     base_colors = ["green", "red", "blue", "orange", "purple", "brown", "cyan", "magenta", "olive", "gray"]
     if len(labels) > len(base_colors):
@@ -353,8 +446,14 @@ def main():
     annotate_bars(axes[1], bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
 
     # legend mapping index -> model name (colored)
-    patches = [mpatches.Patch(color=bar_colors[i], label=f"{i+1}. {labels[i]}") for i in range(len(labels))]
-    axes[0].legend(handles=patches, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
+    patches = [mpatches.Patch(color=bar_colors[i], label=f"#{i+1} {labels[i]}") for i in range(len(labels))]
+    axes[0].legend(
+        handles=patches,
+        title="Model order\n(Macro F1 desc)",
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        borderaxespad=0.0,
+    )
 
     # embed best values in a small box on the FIGURE (bottom-right)
     best_acc = accuracies[idx_best_acc]
@@ -395,6 +494,7 @@ def main():
     loss_out = results_root / "comparison_history_loss.png"
     acc_out = results_root / "comparison_history_accuracy.png"
     grid_out = results_root / "comparison_history_grid.png"
+    cm_grid_out = results_root / "comparison_confusion_matrix_grid.png"
 
     plot_metric_overview(
         processed,
@@ -418,6 +518,14 @@ def main():
     if grid_out.exists():
         print(f"Saved per-model history grid to {grid_out}")
 
+    cm_models = [item for item in processed if item.get("confusion_matrix") is not None]
+    if cm_models:
+        plot_confusion_matrix_grid(cm_models, cm_grid_out)
+        if cm_grid_out.exists():
+            print(f"Saved per-model confusion matrix grid to {cm_grid_out}")
+    else:
+        print("No confusion matrices found in the available results; skipping confusion matrix grid.")
+
 
 if __name__ == "__main__":
-    main()
+    main("results_3")
