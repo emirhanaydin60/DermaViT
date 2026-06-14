@@ -153,7 +153,8 @@ def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
         series = trim_series(train_values, val_values)
         if not series:
             continue
-        train_values, val_values = series
+        train_values = list(series[0] or [])
+        val_values = list(series[1] or [])
         if not train_values or not val_values:
             continue
 
@@ -177,12 +178,30 @@ def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
     plt.close(fig)
 
 
-def plot_model_grid(models_data, out_path):
+def get_best_history_point(history, metric_name):
+    values = history.get(f"val_{metric_name}", [])
+    values = trim_series(values)
+    if not values:
+        return None, None
+
+    values = values[0]
+    if not values:
+        return None, None
+
+    if metric_name == "loss":
+        best_idx = int(np.argmin(values))
+    else:
+        best_idx = int(np.argmax(values))
+
+    return best_idx, values[best_idx]
+
+
+def plot_model_grid(models_data, out_path, best_metric_name="loss", grid_cols=3):
     count = len(models_data)
     if count == 0:
         return
 
-    cols = 3
+    cols = max(1, int(grid_cols))
     rows = math.ceil(count / cols)
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 5.2, rows * 4.2))
     axes = np.array(axes).reshape(-1)
@@ -206,8 +225,10 @@ def plot_model_grid(models_data, out_path):
             ax.set_axis_off()
             continue
 
-        train_loss, val_loss = loss_series
-        train_acc, val_acc = acc_series
+        train_loss = list(loss_series[0] or [])
+        val_loss = list(loss_series[1] or [])
+        train_acc = list(acc_series[0] or [])
+        val_acc = list(acc_series[1] or [])
 
         epochs_loss = np.arange(1, len(train_loss) + 1)
         epochs_acc = np.arange(1, len(train_acc) + 1)
@@ -218,20 +239,21 @@ def plot_model_grid(models_data, out_path):
         ax2.plot(epochs_acc, train_acc, color=acc_color, linestyle=":", linewidth=2, alpha=0.9, label="train acc")
         ax2.plot(epochs_acc, val_acc, color=acc_color, linestyle="-.", linewidth=2, alpha=0.9, label="val acc")
 
-        best_loss_idx = int(np.argmin(val_loss))
-        best_epoch = best_loss_idx + 1
-        best_loss_value = val_loss[best_loss_idx]
-        ax.scatter([best_epoch], [best_loss_value], s=120, color=loss_color, edgecolors="white", linewidths=1.5, zorder=6)
-        ax.annotate(
-            f"best loss={best_loss_value:.3f}\nepoch={best_epoch}",
-            xy=(best_epoch, best_loss_value),
-            xytext=(8, -18),
-            textcoords="offset points",
-            fontsize=8,
-            color=loss_color,
-            va="top",
-            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=loss_color, alpha=0.85),
-        )
+        best_history_idx, best_history_value = get_best_history_point(history, best_metric_name)
+        if best_history_idx is not None:
+            best_epoch = best_history_idx + 1
+            best_color = acc_color if best_metric_name == "acc" else loss_color
+            ax.scatter([best_epoch], [best_history_value], s=120, color=best_color, edgecolors="white", linewidths=1.5, zorder=6)
+            ax.annotate(
+                f"best val {best_metric_name}={best_history_value:.3f}\nepoch={best_epoch}",
+                xy=(best_epoch, best_history_value),
+                xytext=(8, -18),
+                textcoords="offset points",
+                fontsize=8,
+                color=best_color,
+                va="top",
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=best_color, alpha=0.85),
+            )
 
         ax.set_title(shorten_label(label, max_len=18), fontsize=10)
         ax.set_xlabel("Epoch")
@@ -241,12 +263,18 @@ def plot_model_grid(models_data, out_path):
         ax2.tick_params(axis="y", labelcolor=acc_color)
         ax.grid(True, alpha=0.2)
 
+        best_metric_caption = None
+        if best_history_idx is not None:
+            best_metric_caption = f"best val {best_metric_name}={best_history_value:.3f}"
+
         best_loss = item.get("best_val_loss")
         epochs_trained = item.get("epochs_trained")
         caption_parts = []
         if epochs_trained is not None:
             caption_parts.append(f"ep={epochs_trained}")
-        if best_loss is not None:
+        if best_metric_caption is not None:
+            caption_parts.append(best_metric_caption)
+        elif best_loss is not None:
             caption_parts.append(f"best val loss={best_loss:.3f}")
         if caption_parts:
             ax.text(0.02, 0.02, " | ".join(caption_parts), transform=ax.transAxes, fontsize=8, va="bottom")
@@ -266,12 +294,12 @@ def plot_model_grid(models_data, out_path):
     plt.close(fig)
 
 
-def plot_confusion_matrix_grid(models_data, out_path, class_names=None):
+def plot_confusion_matrix_grid(models_data, out_path, class_names=None, grid_cols=3):
     count = len(models_data)
     if count == 0:
         return
 
-    cols = 3
+    cols = max(1, int(grid_cols))
     rows = math.ceil(count / cols)
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 5.2, rows * 4.8))
     axes = np.array(axes).reshape(-1)
@@ -312,7 +340,7 @@ def plot_confusion_matrix_grid(models_data, out_path, class_names=None):
         if not item_class_names or len(item_class_names) != cm.shape[0]:
             item_class_names = [str(i) for i in range(cm.shape[0])]
 
-        im = ax.imshow(cm, cmap=cmap, vmin=0, vmax=vmax)
+        ax.imshow(cm, cmap=cmap, vmin=0, vmax=vmax)
 
         for row_idx in range(cm.shape[0]):
             for col_idx in range(cm.shape[1]):
@@ -348,7 +376,7 @@ def plot_confusion_matrix_grid(models_data, out_path, class_names=None):
     plt.close(fig)
 
 
-def main(path="results"):
+def main(path="results", best_history_metric="loss", grid_cols=3):
     results_root = Path(path)
     results = collect_entries(results_root)
 
@@ -403,7 +431,7 @@ def main(path="results"):
         bar_colors = base_colors[: len(labels)]
 
     x = np.arange(len(labels))
-    fig, axes = plt.subplots(2, 1, figsize=(max(10, len(labels) * 1.2), 8), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(max(10, len(labels) * 1.0), 8), sharex=True)
 
     def annotate_bars(ax, bars, fmt="{:.3f}", fontsize=9, highlights=None):
         if highlights is None:
@@ -416,7 +444,6 @@ def main(path="results"):
             if i in highlights:
                 label = label + " *"
             x_pos = bar.get_x() + bar.get_width() / 2
-            # place label inside bar if tall, otherwise above
             if height >= 0.95 * ymax:
                 y = height - 0.01 * ymax
                 va = "top"
@@ -430,22 +457,22 @@ def main(path="results"):
     idx_best_acc = int(np.argmax(accuracies))
     idx_best_f1 = int(np.argmax(f1s))
 
-    bars_acc = axes[0].bar(x, accuracies, color=bar_colors)
+    bar_width = 0.48
+
+    bars_acc = axes[0].bar(x, accuracies, color=bar_colors, width=bar_width)
     axes[0].set_ylim(0, 1.0)
     axes[0].set_ylabel("Accuracy")
     axes[0].set_title("Accuracy per model")
     annotate_bars(axes[0], bars_acc, fmt="{:.3f}", highlights={idx_best_acc})
 
-    bars_f1 = axes[1].bar(x, f1s, color=bar_colors)
+    bars_f1 = axes[1].bar(x, f1s, color=bar_colors, width=bar_width)
     axes[1].set_ylim(0, 1.0)
     axes[1].set_ylabel("Macro F1")
     axes[1].set_xticks(x)
     axes[1].set_title("Macro-F1 per model")
-    # hide x-axis labels (we use legend for mapping)
     axes[1].tick_params(axis="x", labelbottom=False)
     annotate_bars(axes[1], bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
 
-    # legend mapping index -> model name (colored)
     patches = [mpatches.Patch(color=bar_colors[i], label=f"#{i+1} {labels[i]}") for i in range(len(labels))]
     axes[0].legend(
         handles=patches,
@@ -455,40 +482,12 @@ def main(path="results"):
         borderaxespad=0.0,
     )
 
-    # embed best values in a small box on the FIGURE (bottom-right)
-    best_acc = accuracies[idx_best_acc]
-    best_f1 = f1s[idx_best_f1]
+    plt.tight_layout(rect=(0, 0.10, 0.76, 0.98))
+    fig.canvas.draw()
 
-    # inset axes placed relative to the whole figure (bottom-right)
-    box_w = 0.26
-    box_h = 0.10
-    box_x = 0.98 - box_w - 0.01
-    box_y = 0.01
-    box_ax = fig.add_axes([box_x, box_y, box_w, box_h], frameon=False)
-    box_ax.set_xticks([])
-    box_ax.set_yticks([])
-
-    # positions inside inset axes (in axes coords)
-    y1 = 0.67
-    y2 = 0.30
-    txt1 = f"Best Accuracy: {shorten_label(labels[idx_best_acc], max_len=10)} = {best_acc:.3f}"
-    txt2 = f"Best Macro F1: {shorten_label(labels[idx_best_f1], max_len=10)} = {best_f1:.3f}"
-    box_ax.text(0.02, y1, txt1, ha="left", va="center", fontsize=9)
-    box_ax.text(0.02, y2, txt2, ha="left", va="center", fontsize=9)
-
-    # draw colored squares at the end of each line inside the box
-    sq_w = 0.07
-    sq_h = 0.25
-    # right-aligned squares
-    rect1 = mpatches.Rectangle((0.90, y1 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=bar_colors[idx_best_acc], edgecolor="none")
-    rect2 = mpatches.Rectangle((0.90, y2 - sq_h / 2), sq_w, sq_h, transform=box_ax.transAxes, facecolor=bar_colors[idx_best_f1], edgecolor="none")
-    box_ax.add_patch(rect1)
-    box_ax.add_patch(rect2)
-
-    plt.tight_layout()
     out_path = results_root / "comparison_metrics.png"
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
     print(f"Saved comparison plot to {out_path}")
 
     loss_out = results_root / "comparison_history_loss.png"
@@ -514,13 +513,13 @@ def main(path="results"):
     )
     print(f"Saved accuracy history comparison to {acc_out}")
 
-    plot_model_grid(processed, grid_out)
+    plot_model_grid(processed, grid_out, best_metric_name=best_history_metric, grid_cols=grid_cols)
     if grid_out.exists():
         print(f"Saved per-model history grid to {grid_out}")
 
     cm_models = [item for item in processed if item.get("confusion_matrix") is not None]
     if cm_models:
-        plot_confusion_matrix_grid(cm_models, cm_grid_out)
+        plot_confusion_matrix_grid(cm_models, cm_grid_out, grid_cols=grid_cols)
         if cm_grid_out.exists():
             print(f"Saved per-model confusion matrix grid to {cm_grid_out}")
     else:
@@ -528,4 +527,4 @@ def main(path="results"):
 
 
 if __name__ == "__main__":
-    main("results_3")
+    main("results_dumenden_3lu_isades", best_history_metric="loss", grid_cols=2)

@@ -362,4 +362,4 @@ def main(path="results"):
 
 
 if __name__ == "__main__":
-    main("results_3")
+    main("results_top3_val_acc")

@@ -103,12 +103,12 @@ def print_compact_summary(summary: dict) -> None:
         print(f"- {item['model']}: acc={item['test_accuracy']}, f1={item['test_macro_f1']}, " f"epochs={item['epochs_trained']}, time_min={item['total_training_time_min']}, " f"best_val_loss={item['best_val_loss']}")
 
 
-def main() -> None:
+def main(path) -> None:
     parser = argparse.ArgumentParser(description="Summarize results/overall_report.json into a compact JSON file.")
-    parser.add_argument("--report", default="results/overall_report.json", help="Path to overall_report.json")
+    parser.add_argument("--report", default=f"{path}/overall_report.json", help="Path to overall_report.json")
     parser.add_argument(
         "--output",
-        default="results/overall_report_summary.json",
+        default=f"{path}/overall_report_summary.json",
         help="Path to the compact summary JSON file",
     )
     args = parser.parse_args()
@@ -128,4 +128,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main("results_top3_val_acc")

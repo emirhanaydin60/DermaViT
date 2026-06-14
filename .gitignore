@@ -10,6 +10,7 @@ __pycache__/
 # Logs and temporary
 *.log
 *.tmp
+*.bkp
 
 # Ignore environment files
 venv/
