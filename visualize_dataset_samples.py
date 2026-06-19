@@ -141,13 +141,14 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
 
     fig.patch.set_facecolor("white")
     fig.suptitle("ISIC2019 class samples and class counts", fontsize=20, fontweight="bold", y=0.98, color=PRIMARY_COLOR)
-    fig.subplots_adjust(left=0.03, right=0.985, top=0.92, bottom=0.08)
+    fig.subplots_adjust(left=0.03, right=0.985, top=0.92, bottom=0.12)
 
     for idx, class_code in enumerate(ordered_classes):
         ax = sample_axes[idx]
         ax.set_axis_off()
         ax.set_facecolor("#f7f7f7")
         ax.set_aspect("equal", adjustable="box")
+        ax.set_box_aspect(1)
 
         class_index = class_names.index(class_code)
         sample_idx = selected.get(class_index)
@@ -205,7 +206,6 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     count_ax.set_yticklabels(ordered_classes, fontsize=11, fontweight="bold")
     count_ax.invert_yaxis()
     count_ax.set_xlabel("Number of images", fontsize=11)
-    count_ax.set_title("b) Class counts", loc="left", fontsize=15, fontweight="bold", color=PRIMARY_COLOR, pad=10)
     count_ax.grid(axis="x", linestyle="--", alpha=0.25)
     count_ax.set_axisbelow(True)
 
@@ -221,7 +221,32 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
 
     count_ax.set_xlabel("Number of images", fontsize=11)
 
-    sample_axes[0].set_title("a) ISIC2019 class samples", loc="left", fontsize=15, fontweight="bold", color=PRIMARY_COLOR, pad=10)
+    sample_panel_left = min(ax.get_position().x0 for ax in sample_axes)
+    sample_panel_right = max(ax.get_position().x1 for ax in sample_axes)
+    sample_panel_bottom = min(ax.get_position().y0 for ax in sample_axes)
+    sample_panel_center = (sample_panel_left + sample_panel_right) / 2
+    count_panel = count_ax.get_position()
+
+    fig.text(
+        sample_panel_center,
+        sample_panel_bottom - 0.03,
+        "a) ISIC2019 class samples",
+        ha="center",
+        va="top",
+        fontsize=15,
+        fontweight="bold",
+        color=PRIMARY_COLOR,
+    )
+    fig.text(
+        count_panel.x0,
+        count_panel.y0 - 0.03,
+        "b) Class counts",
+        ha="left",
+        va="top",
+        fontsize=15,
+        fontweight="bold",
+        color=PRIMARY_COLOR,
+    )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
