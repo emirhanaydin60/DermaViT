@@ -30,7 +30,7 @@ CLASS_NAME_MAP = {
     "MEL": "Melanoma",
     "NV": "Melanocytic Nevus",
     "BCC": "Basal Cell Carcinoma",
-    "AK": "Actinic Keratosis / Bowen's Disease (Intraepithelial Carcinoma)",
+    "AK": "Actinic Keratosis",
     "BKL": "Benign Keratosis",
     "DF": "Dermatofibroma",
     "VASC": "Vascular Lesion",
@@ -108,11 +108,7 @@ def load_image(image_path: Path):
 def fit_image_to_square(image, size: int = 512):
     from PIL import Image, ImageOps
 
-    square = Image.new("RGB", (size, size), color="white")
-    fitted = ImageOps.contain(image, (size, size), method=Image.Resampling.LANCZOS)
-    offset = ((size - fitted.width) // 2, (size - fitted.height) // 2)
-    square.paste(fitted, offset)
-    return square
+    return ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
 
 
 def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
@@ -134,7 +130,7 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     )
 
     fig = plt.figure(figsize=(20, 10), constrained_layout=False)
-    outer = gridspec.GridSpec(1, 2, width_ratios=[1.25, 1.0], wspace=0.08, figure=fig)
+    outer = gridspec.GridSpec(1, 2, width_ratios=[1.45, 0.75], wspace=0.10, figure=fig)
     sample_grid = gridspec.GridSpecFromSubplotSpec(2, 4, subplot_spec=outer[0], wspace=0.10, hspace=0.30)
     sample_axes = [fig.add_subplot(sample_grid[i, j]) for i in range(2) for j in range(4)]
     count_ax = fig.add_subplot(outer[1])
@@ -201,7 +197,7 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     counts = [class_counts[class_code] for class_code in ordered_classes]
     y_positions = list(range(len(ordered_classes)))
 
-    count_ax.barh(y_positions, counts, color=PRIMARY_COLOR, edgecolor=PRIMARY_COLOR)
+    count_ax.barh(y_positions, counts, color=PRIMARY_COLOR, edgecolor=PRIMARY_COLOR, height=0.55)
     count_ax.set_yticks(y_positions)
     count_ax.set_yticklabels(ordered_classes, fontsize=11, fontweight="bold")
     count_ax.invert_yaxis()
@@ -230,7 +226,7 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     fig.text(
         sample_panel_center,
         sample_panel_bottom - 0.03,
-        "a) ISIC2019 class samples",
+        "a)",
         ha="center",
         va="top",
         fontsize=15,
@@ -240,7 +236,7 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     fig.text(
         count_panel.x0,
         count_panel.y0 - 0.03,
-        "b) Class counts",
+        "b)",
         ha="left",
         va="top",
         fontsize=15,

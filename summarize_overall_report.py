@@ -7,6 +7,7 @@ This script intentionally excludes long fields such as:
 
 It writes a short JSON summary to `results/overall_report_summary.json`
 and prints a compact table to the console.
+It also saves a horizontal training time comparison plot next to the summary.
 """
 
 from __future__ import annotations
@@ -103,18 +104,9 @@ def print_compact_summary(summary: dict) -> None:
         print(f"- {item['model']}: acc={item['test_accuracy']}, f1={item['test_macro_f1']}, " f"epochs={item['epochs_trained']}, time_min={item['total_training_time_min']}, " f"best_val_loss={item['best_val_loss']}")
 
 
-def main(path) -> None:
-    parser = argparse.ArgumentParser(description="Summarize results/overall_report.json into a compact JSON file.")
-    parser.add_argument("--report", default=f"{path}/overall_report.json", help="Path to overall_report.json")
-    parser.add_argument(
-        "--output",
-        default=f"{path}/overall_report_summary.json",
-        help="Path to the compact summary JSON file",
-    )
-    args = parser.parse_args()
-
-    report_path = Path(args.report)
-    output_path = Path(args.output)
+def main(path, report=None, output=None) -> None:
+    report_path = Path(report or f"{path}/overall_report.json")
+    output_path = Path(output or f"{path}/overall_report_summary.json")
 
     report = load_report(report_path)
     summary = build_summary(report)
@@ -126,6 +118,23 @@ def main(path) -> None:
     print(f"Saved compact summary to {output_path}")
     print_compact_summary(summary)
 
+    try:
+        from plot_comparison_metrics import plot_training_time_comparison
+
+        training_time_plot_path = output_path.with_name("comparison_training_time.png")
+        plot_training_time_comparison(summary.get("models", []), training_time_plot_path)
+        print(f"Saved training time comparison to {training_time_plot_path}")
+    except Exception as exc:
+        print(f"Warning: could not create training time comparison plot: {exc}")
+
 
 if __name__ == "__main__":
-    main("results_top3_val_acc")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Summarize an overall report JSON file.")
+    parser.add_argument("path", nargs="?", default="results_top3_val_acc", help="Path prefix containing overall_report.json")
+    parser.add_argument("--report", help="Path to overall_report.json")
+    parser.add_argument("--output", help="Path to the compact summary JSON file")
+    args = parser.parse_args()
+
+    main(args.path, report=args.report, output=args.output)

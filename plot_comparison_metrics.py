@@ -2,6 +2,7 @@
 
 Outputs:
 - `results/comparison_metrics.png`: accuracy and macro F1 bar charts.
+- `results/comparison_training_time.png`: horizontal training time comparison.
 - `results/comparison_history_loss.png`: all models' train/val loss curves on one plot.
 - `results/comparison_history_accuracy.png`: all models' train/val accuracy curves on one plot.
 - `results/comparison_history_grid.png`: one image with per-model history panels.
@@ -32,6 +33,31 @@ def load_json_if_exists(path):
     except Exception as exc:
         print(f"Warning: failed to read {path}: {exc}")
         return None
+
+
+def load_overall_report_summary(results_root=Path("results")):
+    summary_path = results_root / "overall_report_summary.json"
+    return load_json_if_exists(summary_path)
+
+
+def load_training_time_entries(results_root=Path("results")):
+    summary = load_overall_report_summary(results_root)
+    if isinstance(summary, dict):
+        models = summary.get("models", [])
+        if models:
+            return models
+
+    report_path = results_root / "overall_report.json"
+    report = load_json_if_exists(report_path)
+    if isinstance(report, list):
+        return report
+
+    metrics_path = results_root / "metrics_summary.json"
+    metrics = load_json_if_exists(metrics_path)
+    if isinstance(metrics, list):
+        return metrics
+
+    return []
 
 
 def load_model_history(model_name, results_root=Path("results")):
@@ -172,6 +198,59 @@ def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
     style_handle_val = Line2D([0], [0], color="black", lw=2, linestyle="--", label="val")
     handles = color_handles + [style_handle_train, style_handle_val]
     ax.legend(handles=handles, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
+
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_training_time_comparison(models_data, out_path, title="Training Time Comparison"):
+    items = []
+    for item in models_data:
+        model_name = item.get("model") or item.get("label") or item.get("model_key") or "unknown"
+        training_time = item.get("total_training_time_min")
+        if training_time is None:
+            continue
+        try:
+            training_time = float(training_time)
+        except Exception:
+            continue
+        items.append({"model": model_name, "training_time": training_time})
+
+    if not items:
+        return
+
+    items.sort(key=lambda item: item["training_time"], reverse=True)
+
+    labels = [shorten_label(item["model"], max_len=24) for item in items]
+    values = [item["training_time"] for item in items]
+    colors = get_colors(len(items))
+    y_positions = np.arange(len(items))
+
+    fig_height = max(4.5, 0.55 * len(items) + 1.5)
+    fig, ax = plt.subplots(figsize=(11.5, fig_height))
+    bars = ax.barh(y_positions, values, color=colors, edgecolor="black", linewidth=0.6)
+
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(labels)
+    ax.invert_yaxis()
+    ax.set_xlabel("Training Time (minutes)")
+    ax.set_ylabel("Models")
+    ax.set_title(title)
+    ax.grid(axis="x", alpha=0.25)
+
+    xmax = max(values)
+    ax.set_xlim(0, xmax * 1.15 if xmax > 0 else 1.0)
+
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_width() + xmax * 0.015,
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:.2f}",
+            va="center",
+            ha="left",
+            fontsize=9,
+        )
 
     plt.tight_layout()
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
@@ -379,6 +458,7 @@ def plot_confusion_matrix_grid(models_data, out_path, class_names=None, grid_col
 def main(path="results", best_history_metric="loss", grid_cols=3):
     results_root = Path(path)
     results = collect_entries(results_root)
+    training_time_entries = load_training_time_entries(results_root)
 
     if not results:
         print("No results found in results/overall_report.json, results/metrics_summary.json, or per-model history files.")
@@ -403,6 +483,7 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
                 "history": history,
                 "accuracy": result.get("test_accuracy", result.get("accuracy", 0.0)),
                 "macro_f1": result.get("test_macro_f1", result.get("macro_f1", 0.0)),
+                "total_training_time_min": result.get("total_training_time_min"),
                 "best_val_loss": result.get("best_val_loss"),
                 "epochs_trained": result.get("epochs_trained"),
                 "confusion_matrix": confusion_matrix,
@@ -494,6 +575,7 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
     acc_out = results_root / "comparison_history_accuracy.png"
     grid_out = results_root / "comparison_history_grid.png"
     cm_grid_out = results_root / "comparison_confusion_matrix_grid.png"
+    training_time_out = results_root / "comparison_training_time.png"
 
     plot_metric_overview(
         processed,
@@ -517,6 +599,12 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
     if grid_out.exists():
         print(f"Saved per-model history grid to {grid_out}")
 
+    if not training_time_entries:
+        training_time_entries = processed
+    plot_training_time_comparison(training_time_entries, training_time_out)
+    if training_time_out.exists():
+        print(f"Saved training time comparison to {training_time_out}")
+
     cm_models = [item for item in processed if item.get("confusion_matrix") is not None]
     if cm_models:
         plot_confusion_matrix_grid(cm_models, cm_grid_out, grid_cols=grid_cols)
@@ -527,4 +615,12 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
 
 
 if __name__ == "__main__":
-    main("results_dumenden_3lu_isades", best_history_metric="loss", grid_cols=2)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Plot comparison metrics from a results folder.")
+    parser.add_argument("path", nargs="?", default="results_top3_val_acc", help="Path to the results folder")
+    parser.add_argument("--best-history-metric", default="loss", choices=["loss", "acc"], help="Metric used to highlight the best epoch in the history grid")
+    parser.add_argument("--grid-cols", type=int, default=3, help="Number of columns in the per-model history grid")
+    args = parser.parse_args()
+
+    main(args.path, best_history_metric=args.best_history_metric, grid_cols=args.grid_cols)

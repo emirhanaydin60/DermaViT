@@ -1,15 +1,15 @@
 """Plot parameter counts for the main ViT-family model variants.
 
 The script builds one grouped chart for these families:
-- vit
-- swinv2
-- pvt_v2
-- mobilevitv2
-- maxvit
-- deit3
-- convit
+- beit
 - cait
-- beitv2
+- convit
+- deit
+- maxvit
+- mobilevit
+- pvt_v2
+- swin
+- vit
 
 It prefers the model registry in `timm` and uses the current project's
 saved summaries as a fallback cache for parameter counts.
@@ -35,11 +35,11 @@ FAMILY_VARIANTS = {
         "vit_large_patch14_224",
         "vit_huge_patch14_224",
     ],
-    "swinv2": [
-        "swinv2_tiny_window8_256",
-        "swinv2_small_window8_256",
-        "swinv2_base_window8_256",
-        "swinv2_large_window12_192",
+    "swin": [
+        "swin_tiny_patch4_window7_224",
+        "swin_small_patch4_window7_224",
+        "swin_base_patch4_window7_224",
+        "swin_large_patch4_window7_224",
     ],
     "pvt_v2": [
         "pvt_v2_b0",
@@ -50,28 +50,21 @@ FAMILY_VARIANTS = {
         "pvt_v2_b4",
         "pvt_v2_b5",
     ],
-    "mobilevitv2": [
-        "mobilevitv2_050",
-        "mobilevitv2_075",
-        "mobilevitv2_100",
-        "mobilevitv2_125",
-        "mobilevitv2_150",
-        "mobilevitv2_175",
-        "mobilevitv2_200",
+    "mobilevit": [
+        "mobilevit_xxs",
+        "mobilevit_xs",
+        "mobilevit_s",
     ],
     "maxvit": [
-        "maxvit_tiny_tf_224",
-        "maxvit_small_tf_224",
-        "maxvit_base_tf_224",
-        "maxvit_large_tf_224",
-        "maxvit_xlarge_tf_224",
+        "maxvit_tiny_rw_224",
+        "maxvit_small_rw_224",
+        "maxvit_base_rw_224",
+        "maxvit_large_rw_224",
     ],
-    "deit3": [
-        "deit3_small_patch16_224",
-        "deit3_medium_patch16_224",
-        "deit3_base_patch16_224",
-        "deit3_large_patch16_224",
-        "deit3_huge_patch14_224",
+    "deit": [
+        "deit_tiny_patch16_224",
+        "deit_small_patch16_224",
+        "deit_base_patch16_224",
     ],
     "convit": [
         "convit_tiny",
@@ -87,34 +80,53 @@ FAMILY_VARIANTS = {
         "cait_m36_384",
         "cait_m48_448",
     ],
-    "beitv2": [
-        "beitv2_base_patch16_224",
-        "beitv2_large_patch16_224",
+    "beit": [
+        "beit_base_patch16_224",
+        "beit_large_patch16_224",
     ],
 }
 
 FAMILY_COLORS = {
     "vit": "#264653",
-    "swinv2": "#e76f51",
+    "swin": "#e76f51",
     "pvt_v2": "#2a9d8f",
-    "mobilevitv2": "#f39c12",
+    "mobilevit": "#f39c12",
     "maxvit": "#8e5ea2",
-    "deit3": "#1f77b4",
+    "deit": "#1f77b4",
     "convit": "#7f7f7f",
     "cait": "#d62728",
-    "beitv2": "#6a994e",
+    "beit": "#6a994e",
 }
 
 FAMILY_DISPLAY = {
     "vit": "ViT",
-    "swinv2": "Swin V2",
+    "swin": "Swin",
     "pvt_v2": "PVT v2",
-    "mobilevitv2": "MobileViT v2",
+    "mobilevit": "MobileViT",
     "maxvit": "MaxViT",
-    "deit3": "DeiT III",
+    "deit": "DeiT",
     "convit": "ConViT",
     "cait": "CaiT",
-    "beitv2": "BEiT v2",
+    "beit": "BEiT",
+}
+
+HIGHLIGHTED_VARIANTS = {
+    "beit": {"beit_base_patch16_224"},
+    "cait": {"cait_xxs36_224"},
+    "convit": {"convit_tiny"},
+    "deit": {"deit_small_patch16_224"},
+    "maxvit": {"maxvit_tiny_rw_224"},
+    "mobilevit": {"mobilevit_xs"},
+    "pvt_v2": {"pvt_v2_b0"},
+    "swin": {"swin_small_patch4_window7_224"},
+    "vit": {"vit_small_patch16_224"},
+}
+
+MODEL_ALIASES = {
+    "maxvit_tiny_rw_224": ["maxvit_tiny_tf_224"],
+    "maxvit_small_rw_224": ["maxvit_small_tf_224"],
+    "maxvit_base_rw_224": ["maxvit_base_tf_224"],
+    "maxvit_large_rw_224": ["maxvit_large_tf_224"],
 }
 
 
@@ -176,11 +188,24 @@ def resolve_parameter_count(model_name: str, num_classes: int, cache: dict[str, 
     if cached is not None:
         return float(cached)
 
-    model = timm.create_model(model_name, pretrained=False, num_classes=num_classes)
-    try:
-        return round(sum(p.numel() for p in model.parameters()) / 1e6, 3)
-    finally:
-        del model
+    candidate_names = [model_name, *MODEL_ALIASES.get(model_name, [])]
+    last_error: Exception | None = None
+
+    for candidate_name in candidate_names:
+        try:
+            model = timm.create_model(candidate_name, pretrained=False, num_classes=num_classes)
+        except Exception as exc:
+            last_error = exc
+            continue
+
+        try:
+            return round(sum(p.numel() for p in model.parameters()) / 1e6, 3)
+        finally:
+            del model
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Unable to resolve model name: {model_name}")
 
 
 def short_variant_label(family: str, model_name: str) -> str:
@@ -189,6 +214,7 @@ def short_variant_label(family: str, model_name: str) -> str:
     else:
         label = model_name
     label = re.sub(r"_(224|256|384|448|512)$", "", label)
+    label = label.replace("_rw", "").replace("_tf", "")
     return label
 
 
@@ -273,11 +299,27 @@ def plot_parameter_counts(series: list[dict], output_path: Path) -> None:
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
 
-    for bar, value in zip(bars, values):
+    for bar, value, item in zip(bars, values, series):
+        family = item["family"]
+        is_highlighted = item["model_name"] in HIGHLIGHTED_VARIANTS.get(family, set())
+        if is_highlighted:
+            bar.set_edgecolor(FAMILY_COLORS[family])
+            bar.set_linewidth(5.0)
+            ax.annotate(
+                "\n\n*",
+                xy=(bar.get_x() + bar.get_width() / 2, value / 1.08),
+                xytext=(0, 0),
+                textcoords="offset points",
+                ha="center",
+                va="center",
+                fontsize=15,
+                fontweight="bold",
+                color="#d62728",
+            )
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             value * 1.06,
-            f"{value:.3g}M",
+            f"{value:.1f}M",
             ha="center",
             va="bottom",
             fontsize=8,
@@ -306,7 +348,7 @@ def plot_parameter_counts(series: list[dict], output_path: Path) -> None:
     ax.set_ylim(bottom, max_value * 1.35)
     ax.set_xlim(min(x_positions) - 0.8, max(x_positions) + 0.8)
 
-    fig.suptitle("ViT-family parameter comparison", y=0.985, fontsize=14)
+    fig.suptitle("", y=0.985, fontsize=14)
     plt.tight_layout(rect=(0, 0.04, 1, 0.97))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
