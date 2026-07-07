@@ -3,8 +3,7 @@
 Outputs:
 - `results/comparison_metrics.png`: accuracy and macro F1 bar charts.
 - `results/comparison_training_time.png`: horizontal training time comparison.
-- `results/comparison_history_loss.png`: all models' train/val loss curves on one plot.
-- `results/comparison_history_accuracy.png`: all models' train/val accuracy curves on one plot.
+- `results/comparison_history_loss_accuracy.png`: loss and accuracy curves shown side by side.
 - `results/comparison_history_grid.png`: one image with per-model history panels.
 - `results/comparison_confusion_matrix_grid.png`: one image with per-model confusion matrices.
 
@@ -155,6 +154,57 @@ def shorten_label(label, max_len=15):
     return label[:max_len] + "..."
 
 
+def format_model_display_name(model_name):
+    name = (model_name or "unknown").lower()
+
+    special_names = {
+        "beit_base_patch16_224": "BEiT-Base",
+        "cait_xxs36_224": "CaiT-XXS36",
+        "convit_tiny": "ConViT-Tiny",
+        "deit_small_patch16_224": "DeiT-Small",
+        "maxvit_tiny_rw_224": "MaxViT-Tiny",
+        "mobilevit_xs": "MobileViT-XS",
+        "pvt_v2_b0": "PVTv2-B0",
+        "swin_small_patch4_window7_224": "Swin-Small",
+        "vit_small_patch16_224": "ViT-Small",
+    }
+    if name in special_names:
+        return special_names[name]
+
+    family_aliases = {
+        "beit": "BEiT",
+        "cait": "CaiT",
+        "convit": "ConViT",
+        "deit": "DeiT",
+        "maxvit": "MaxViT",
+        "mobilevit": "MobileViT",
+        "pvt": "PVT",
+        "swin": "Swin",
+        "vit": "ViT",
+    }
+
+    parts = name.split("_")
+    if not parts:
+        return model_name
+
+    family = parts[0]
+    family_display = family_aliases.get(family, family.title())
+
+    variant_parts = []
+    for part in parts[1:]:
+        if part in {"patch16", "patch4", "window7", "rw", "224", "b0", "b1", "b2", "b3", "b4", "b5", "xxs36", "xs", "s", "tiny", "small", "base", "large"}:
+            variant_parts.append(part.upper() if part in {"rw", "xs", "s"} else part.title())
+        elif part == "v2":
+            variant_parts.append("v2")
+        else:
+            variant_parts.append(part.replace("-", " ").title())
+
+    variant = "-".join([p for p in variant_parts if p])
+    if variant:
+        return f"{family_display}-{variant}"
+    return family_display
+
+
 def adjust_color(color, factor=0.78):
     r, g, b = mcolors.to_rgb(color)
     return (
@@ -171,7 +221,7 @@ def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
     for item in models_data:
         history = item["history"]
         color = item["color"]
-        model_name = item["label"]
+        model_name = item.get("display_label") or format_model_display_name(item["label"])
         train_key = f"train_{metric_name}"
         val_key = f"val_{metric_name}"
         train_values = history.get(train_key, [])
@@ -200,6 +250,67 @@ def plot_metric_overview(models_data, metric_name, out_path, ylabel, title):
     ax.legend(handles=handles, bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
 
     plt.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_metric_overview_on_axis(ax, models_data, metric_name, ylabel, title):
+    color_handles = []
+    for item in models_data:
+        history = item["history"]
+        color = item["color"]
+        model_name = item.get("display_label") or format_model_display_name(item["label"])
+        train_key = f"train_{metric_name}"
+        val_key = f"val_{metric_name}"
+        train_values = history.get(train_key, [])
+        val_values = history.get(val_key, [])
+        series = trim_series(train_values, val_values)
+        if not series:
+            continue
+        train_values = list(series[0] or [])
+        val_values = list(series[1] or [])
+        if not train_values or not val_values:
+            continue
+
+        epochs = np.arange(1, len(train_values) + 1)
+        ax.plot(epochs, train_values, color=color, linestyle="-", linewidth=2, alpha=0.9)
+        ax.plot(epochs, val_values, color=color, linestyle="--", linewidth=2, alpha=0.9)
+        color_handles.append(Line2D([0], [0], color=color, lw=3, label=model_name))
+
+    ax.set_title(title)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=0.25)
+
+    style_handle_train = Line2D([0], [0], color="black", lw=2, linestyle="-", label="train")
+    style_handle_val = Line2D([0], [0], color="black", lw=2, linestyle="--", label="val")
+    return color_handles + [style_handle_train, style_handle_val]
+
+
+def plot_history_loss_accuracy_comparison(models_data, out_path):
+    if not models_data:
+        return
+
+    fig_width = max(16, len(models_data) * 1.25)
+    fig, axes = plt.subplots(1, 2, figsize=(fig_width, 7))
+
+    legend_handles = plot_metric_overview_on_axis(
+        axes[0],
+        models_data,
+        metric_name="loss",
+        ylabel="Loss",
+        title="Training and validation loss by model",
+    )
+    plot_metric_overview_on_axis(
+        axes[1],
+        models_data,
+        metric_name="acc",
+        ylabel="Accuracy",
+        title="Training and validation accuracy by model",
+    )
+
+    fig.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 1.03), ncol=4, frameon=False)
+    plt.tight_layout(rect=(0, 0, 1, 0.90))
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -290,6 +401,7 @@ def plot_model_grid(models_data, out_path, best_metric_name="loss", grid_cols=3)
         history = item["history"]
         color = item["color"]
         label = item["label"]
+        display_label = item.get("display_label") or format_model_display_name(label)
         loss_color = color
         acc_color = adjust_color(color, 0.45)
 
@@ -334,7 +446,8 @@ def plot_model_grid(models_data, out_path, best_metric_name="loss", grid_cols=3)
                 bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=best_color, alpha=0.85),
             )
 
-        ax.set_title(shorten_label(label, max_len=18), fontsize=10)
+        panel_prefix = chr(ord("a") + idx)
+        ax.set_title(f"({panel_prefix}) {display_label}", fontsize=10, fontweight="bold")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Loss", color=loss_color)
         ax2.set_ylabel("Acc", color=acc_color)
@@ -427,7 +540,9 @@ def plot_confusion_matrix_grid(models_data, out_path, class_names=None, grid_col
                 text_color = "white" if value > (vmax * 0.55) else "black"
                 ax.text(col_idx, row_idx, f"{int(value)}", ha="center", va="center", fontsize=6.5, color=text_color)
 
-        ax.set_title(shorten_label(item["label"], max_len=18), fontsize=10)
+        display_label = item.get("display_label") or format_model_display_name(item["label"])
+        panel_prefix = chr(ord("a") + idx)
+        ax.set_title(f"({panel_prefix}) {display_label}", fontsize=10, fontweight="bold")
         ax.set_xticks(np.arange(len(item_class_names)))
         ax.set_yticks(np.arange(len(item_class_names)))
         ax.set_xticklabels(item_class_names, rotation=45, ha="right", fontsize=7)
@@ -479,6 +594,7 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
         processed.append(
             {
                 "label": infer_model_name(result),
+                "display_label": format_model_display_name(infer_model_name(result)),
                 "color": None,
                 "history": history,
                 "accuracy": result.get("test_accuracy", result.get("accuracy", 0.0)),
@@ -538,23 +654,23 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
     idx_best_acc = int(np.argmax(accuracies))
     idx_best_f1 = int(np.argmax(f1s))
 
-    bar_width = 0.48
+    bar_width = 0.8
 
-    bars_acc = axes[0].bar(x, accuracies, color=bar_colors, width=bar_width)
+    bars_f1 = axes[0].bar(x, f1s, color=bar_colors, width=bar_width)
     axes[0].set_ylim(0, 1.0)
-    axes[0].set_ylabel("Accuracy")
-    axes[0].set_title("Accuracy per model")
-    annotate_bars(axes[0], bars_acc, fmt="{:.3f}", highlights={idx_best_acc})
+    axes[0].set_ylabel("Macro F1")
+    axes[0].set_title("Macro-F1 per model")
+    axes[0].tick_params(axis="x", labelbottom=False)
+    annotate_bars(axes[0], bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
 
-    bars_f1 = axes[1].bar(x, f1s, color=bar_colors, width=bar_width)
+    bars_acc = axes[1].bar(x, accuracies, color=bar_colors, width=bar_width)
     axes[1].set_ylim(0, 1.0)
-    axes[1].set_ylabel("Macro F1")
+    axes[1].set_ylabel("Accuracy")
     axes[1].set_xticks(x)
-    axes[1].set_title("Macro-F1 per model")
-    axes[1].tick_params(axis="x", labelbottom=False)
-    annotate_bars(axes[1], bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
+    axes[1].set_title("Accuracy per model")
+    annotate_bars(axes[1], bars_acc, fmt="{:.3f}", highlights={idx_best_acc})
 
-    patches = [mpatches.Patch(color=bar_colors[i], label=f"#{i+1} {labels[i]}") for i in range(len(labels))]
+    patches = [mpatches.Patch(color=bar_colors[i], label=f"#{i+1} {comparison_items[i].get('display_label', labels[i])}") for i in range(len(labels))]
     axes[0].legend(
         handles=patches,
         title="Model order\n(Macro F1 desc)",
@@ -571,29 +687,14 @@ def main(path="results", best_history_metric="loss", grid_cols=3):
     plt.close(fig)
     print(f"Saved comparison plot to {out_path}")
 
-    loss_out = results_root / "comparison_history_loss.png"
-    acc_out = results_root / "comparison_history_accuracy.png"
+    history_pair_out = results_root / "comparison_history_loss_accuracy.png"
     grid_out = results_root / "comparison_history_grid.png"
     cm_grid_out = results_root / "comparison_confusion_matrix_grid.png"
     training_time_out = results_root / "comparison_training_time.png"
 
-    plot_metric_overview(
-        processed,
-        metric_name="loss",
-        out_path=loss_out,
-        ylabel="Loss",
-        title="Training and validation loss by model",
-    )
-    print(f"Saved loss history comparison to {loss_out}")
-
-    plot_metric_overview(
-        processed,
-        metric_name="acc",
-        out_path=acc_out,
-        ylabel="Accuracy",
-        title="Training and validation accuracy by model",
-    )
-    print(f"Saved accuracy history comparison to {acc_out}")
+    plot_history_loss_accuracy_comparison(processed, history_pair_out)
+    if history_pair_out.exists():
+        print(f"Saved loss/accuracy history comparison to {history_pair_out}")
 
     plot_model_grid(processed, grid_out, best_metric_name=best_history_metric, grid_cols=grid_cols)
     if grid_out.exists():
