@@ -27,7 +27,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.text import Text
-from matplotlib.ticker import LogLocator, NullFormatter
+from matplotlib.ticker import LogFormatterMathtext, LogLocator, NullFormatter
 import numpy as np
 
 from misc.comparison_metrics_common import format_model_display_name
@@ -226,11 +226,29 @@ def _style_axis(ax: Axes) -> None:
         spine.set_linewidth(0.8)
 
 
-def _set_log_x(ax: Axes) -> None:
+def _set_log_x(ax: Axes, x_values: np.ndarray | None = None, *, lower_pad: float = 0.84, upper_pad: float = 1.22, snap_lower_to_decade: bool = False) -> None:
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(LogLocator(base=10.0, numticks=6))
-    ax.xaxis.set_minor_locator(LogLocator(base=10.0, subs=[0.2, 0.4, 0.6, 0.8], numticks=12))
+
+    if x_values is None or len(x_values) == 0:
+        return
+
+    x_min = float(np.min(x_values))
+    x_max = float(np.max(x_values))
+    lower = x_min * lower_pad
+    upper = x_max * upper_pad
+
+    if snap_lower_to_decade and lower > 0.0:
+        lower = 10.0 ** np.floor(np.log10(lower))
+
+    lower_decade = int(np.floor(np.log10(lower)))
+    upper_decade = int(np.ceil(np.log10(upper)))
+    major_ticks = np.power(10.0, np.arange(lower_decade, upper_decade + 1, dtype=float))
+    major_ticks = major_ticks[(major_ticks >= lower) & (major_ticks <= upper)]
+    ax.set_xticks(major_ticks)
+    ax.xaxis.set_major_formatter(LogFormatterMathtext(base=10.0))
+    ax.xaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1, numticks=100))
     ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlim(lower, upper)
 
 
 def _save_figure(fig: Figure, output_path: str | Path, *, dpi: int = 220) -> None:
@@ -648,14 +666,13 @@ def _plot_common_scatter(ax: Axes, records: list[dict[str, Any]], color_map: dic
             zorder=4,
         )
 
-    _set_log_x(ax)
+    _set_log_x(ax, x_values, snap_lower_to_decade=True)
     _style_axis(ax)
     ax.set_title(title, fontsize=11.5, fontweight="bold", pad=8)
     ax.set_xlabel("Parameter Count (Millions)", fontsize=10.4, labelpad=5)
     ax.set_ylabel(y_label, fontsize=10.4, labelpad=5)
 
     y_margin_abs = max(0.8, (y_values.max() - y_values.min()) * y_margin)
-    ax.set_xlim(x_values.min() * 0.84, x_values.max() * 1.22)
     ax.set_ylim(y_values.min() - y_margin_abs, y_values.max() + y_margin_abs)
 
     _place_model_labels(ax, records, "params_m", y_key, fontsize=7.8)
@@ -678,12 +695,11 @@ def plot_tradeoff(records: list[dict[str, Any]], color_map: dict[str, str], outp
     time_values = np.array([record["training_time_min"] for record in records], dtype=float)
     bubble_sizes = _bubble_size_scale(time_values)
 
-    _set_log_x(ax)
+    _set_log_x(ax, x_values, snap_lower_to_decade=True)
     _style_axis(ax)
     ax.set_title("Model Size, Accuracy, and Training Cost", fontsize=11.8, fontweight="bold", pad=9)
     ax.set_xlabel("Parameter Count (Millions)", fontsize=10.6, labelpad=5)
     ax.set_ylabel("Test Accuracy (%)", fontsize=10.6, labelpad=5)
-    ax.set_xlim(x_values.min() * 0.75, x_values.max() * 1.45)
     y_margin = max(3.0, (y_values.max() - y_values.min()) * 0.3)
     ax.set_ylim(y_values.min() - y_margin, y_values.max() + y_margin)
 

@@ -7,16 +7,16 @@ from pathlib import Path
 from misc.comparison_confusion_grid import plot_confusion_matrix_grid
 from misc.comparison_history_grid import plot_model_grid
 from misc.comparison_history_plot import plot_history_loss_accuracy_comparison
-from misc.comparison_overview_plot import plot_metrics_comparison
 from misc.comparison_metrics_common import build_processed_entries, load_training_time_entries
+from misc.comparison_metrics_common import plot_metrics_comparison
 from misc.comparison_training_time_plot import generate_publication_figures, plot_training_time_comparison
 
 # Edit these values directly.
-RESULTS_ROOT = Path("previous_results/results_top3_val_acc")
-BEST_HISTORY_METRIC = "acc"
-HISTORY_GRID_COLS = 3
+RESULTS_ROOT = Path("previous_results/swin_variant_results")
+BEST_HISTORY_METRIC = "loss"
+HISTORY_GRID_COLS = 4
 HISTORY_GRID_ROWS = 1
-CONFUSION_GRID_COLS = 3
+CONFUSION_GRID_COLS = 4
 CONFUSION_GRID_ROWS = 1
 
 

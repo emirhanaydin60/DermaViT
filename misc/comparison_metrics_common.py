@@ -12,6 +12,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.lines import Line2D
 
 
@@ -139,7 +140,10 @@ def format_model_display_name(model_name):
         "maxvit_tiny_rw_224": "MaxViT-Tiny",
         "mobilevit_xs": "MobileViT-XS",
         "pvt_v2_b0": "PVTv2-B0",
+        "swin_base_patch4_window7_224": "Swin-Base",
         "swin_small_patch4_window7_224": "Swin-Small",
+        "swin_tiny_patch4_window7_224": "Swin-Tiny",
+        "swin_large_patch4_window7_224": "Swin-Large",
         "vit_small_patch16_224": "ViT-Small",
     }
     if name in special_names:
@@ -520,7 +524,53 @@ def plot_metrics_comparison(processed, out_path, results_root=Path("results")):
     bar_colors = list(itertools.islice(itertools.cycle(base_colors), len(labels))) if len(labels) > len(base_colors) else base_colors[: len(labels)]
 
     x = np.arange(len(labels))
-    fig, axes = plt.subplots(2, 1, figsize=(max(10, len(labels) * 1.0), 8), sharex=True)
+    left_margin = 0.06
+    right_margin = 0.02
+    bottom_margin = 0.18
+    top_margin = 0.92
+    gap = 0.055
+
+    legend_title = "Model order\n(Macro F1 desc)"
+    legend_preview_fig = plt.figure(figsize=(1.0, 1.0))
+    legend_preview_ax = legend_preview_fig.add_axes((0, 0, 1, 1))
+    legend_preview_ax.set_axis_off()
+
+    legend_preview_handles = [mpatches.Patch(color=bar_colors[i], label=f"#{i + 1} {comparison_items[i].get('display_label', labels[i])}") for i in range(len(labels))]
+    legend_preview = legend_preview_ax.legend(
+        handles=legend_preview_handles,
+        title=legend_title,
+        loc="upper left",
+        frameon=False,
+        borderaxespad=0.0,
+        fontsize=8.8,
+        title_fontsize=9.4,
+        handlelength=1.6,
+        handletextpad=0.7,
+        labelspacing=0.7,
+    )
+    legend_preview_canvas = FigureCanvasAgg(legend_preview_fig)
+    legend_preview_canvas.draw()
+    preview_renderer = legend_preview_canvas.get_renderer()
+    legend_bbox = legend_preview.get_window_extent(renderer=preview_renderer).transformed(legend_preview_fig.dpi_scale_trans.inverted())
+    plt.close(legend_preview_fig)
+
+    legend_width_in = legend_bbox.width + 0.35
+    legend_height_in = legend_bbox.height + 0.25
+
+    fig = plt.figure(figsize=(max(13, len(labels) * 1.25), 5.8))
+    fig_width_in, fig_height_in = fig.get_size_inches()
+    legend_width = legend_width_in / fig_width_in
+    legend_left = 1.0 - right_margin - legend_width
+    legend_height = min((top_margin - bottom_margin), legend_height_in / fig_height_in)
+    legend_bottom = top_margin - legend_height
+
+    plots_right = legend_left - gap
+    plots_width = plots_right - left_margin
+    plot_width = (plots_width - gap) / 2.0
+
+    ax_f1 = fig.add_axes((left_margin, bottom_margin, plot_width, top_margin - bottom_margin))
+    ax_acc = fig.add_axes((left_margin + plot_width + gap, bottom_margin, plot_width, top_margin - bottom_margin), sharey=ax_f1)
+    legend_ax = fig.add_axes((legend_left, legend_bottom, legend_width, legend_height))
 
     def annotate_bars(ax, bars, fmt="{:.3f}", fontsize=9, highlights=None):
         highlights = highlights or set()
@@ -545,24 +595,31 @@ def plot_metrics_comparison(processed, out_path, results_root=Path("results")):
     idx_best_f1 = int(np.argmax(f1s))
     bar_width = 0.8
 
-    bars_f1 = axes[0].bar(x, f1s, color=bar_colors, width=bar_width)
-    axes[0].set_ylim(0, 1.0)
-    axes[0].set_ylabel("Macro F1")
-    axes[0].set_title("Macro-F1 per model")
-    axes[0].tick_params(axis="x", labelbottom=False)
-    annotate_bars(axes[0], bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
+    bars_f1 = ax_f1.bar(x, f1s, color=bar_colors, width=bar_width)
+    ax_f1.set_ylim(0, 1.0)
+    ax_f1.set_ylabel("Score")
+    ax_f1.set_title("Macro-F1 per model")
+    ax_f1.set_xticks(x)
+    ax_f1.tick_params(axis="x", labelbottom=False)
+    annotate_bars(ax_f1, bars_f1, fmt="{:.3f}", highlights={idx_best_f1})
 
-    bars_acc = axes[1].bar(x, accuracies, color=bar_colors, width=bar_width)
-    axes[1].set_ylim(0, 1.0)
-    axes[1].set_ylabel("Accuracy")
-    axes[1].set_xticks(x)
-    axes[1].set_title("Accuracy per model")
-    annotate_bars(axes[1], bars_acc, fmt="{:.3f}", highlights={idx_best_acc})
+    bars_acc = ax_acc.bar(x, accuracies, color=bar_colors, width=bar_width)
+    ax_acc.set_ylim(0, 1.0)
+    ax_acc.set_ylabel("Score")
+    ax_acc.set_title("Accuracy per model")
+    ax_acc.set_xticks(x)
+    ax_acc.tick_params(axis="x", labelbottom=False)
+    annotate_bars(ax_acc, bars_acc, fmt="{:.3f}", highlights={idx_best_acc})
 
-    patches = [mpatches.Patch(color=bar_colors[i], label=f"#{i + 1} {comparison_items[i].get('display_label', labels[i])}") for i in range(len(labels))]
-    axes[0].legend(handles=patches, title="Model order\n(Macro F1 desc)", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0.0)
+    legend_ax.set_facecolor("white")
+    legend_ax.set_xticks([])
+    legend_ax.set_yticks([])
+    for spine in legend_ax.spines.values():
+        spine.set_visible(True)
+        spine.set_edgecolor("#cfcfcf")
+        spine.set_linewidth(1.0)
+    legend_ax.legend(handles=legend_preview_handles, title=legend_title, loc="upper center", bbox_to_anchor=(0.5, 0.98), alignment="center", frameon=False, borderaxespad=0.0, fontsize=8.8, title_fontsize=9.4, handlelength=1.6, handletextpad=0.7, labelspacing=0.7)
 
-    plt.tight_layout(rect=(0, 0.10, 0.76, 0.98))
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
