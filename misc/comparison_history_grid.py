@@ -78,8 +78,9 @@ def plot_model_grid(models_data, out_path, best_metric_name="loss", grid_cols=3,
         if best_history_idx is not None:
             best_epoch = best_history_idx + 1
             best_color = acc_color if best_metric_name == "acc" else loss_color
-            ax.scatter([best_epoch], [best_history_value], s=120, color=best_color, edgecolors="white", linewidths=1.5, zorder=6)
-            ax.annotate(
+            target_ax = ax2 if best_metric_name == "acc" else ax
+            target_ax.scatter([best_epoch], [best_history_value], s=120, color=best_color, edgecolors="white", linewidths=1.5, zorder=6)
+            target_ax.annotate(
                 f"best val {best_metric_name}={best_history_value:.3f}\nepoch={best_epoch}",
                 xy=(best_epoch, best_history_value),
                 xytext=(8, -18),
