@@ -17,8 +17,6 @@ labeled b).
 from __future__ import annotations
 
 import argparse
-import random
-from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -39,6 +37,16 @@ CLASS_NAME_MAP = {
 
 GRID_ORDER = ["MEL", "NV", "BCC", "AK", "BKL", "DF", "VASC", "SCC"]
 PRIMARY_COLOR = "#0b2d5b"
+CLASS_SAMPLE_PATHS = {
+    "MEL": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\MEL\\ISIC_0000463_downsampled.jpg",
+    "NV": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\NV\\ISIC_0000128_downsampled.jpg",
+    "BCC": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\BCC\\ISIC_0024432.jpg",
+    "AK": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\AK\\ISIC_0027668.jpg",
+    "BKL": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\BKL\\ISIC_0014586_downsampled.jpg",
+    "DF": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\DF\\ISIC_0027118.jpg",
+    "VASC": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\VASC\\ISIC_0061611.jpg",
+    "SCC": "C:\\Users\\emirh\\Desktop\\Projects\\datasets\\input_sk\\train\\SCC\\ISIC_0027343.jpg",
+}
 FIXED_CLASS_COUNTS = {
     "NV": 12875,
     "MEL": 4522,
@@ -58,31 +66,6 @@ def resolve_split_dir(data_dir: Path, split: str) -> Path:
     if split == "train" and data_dir.is_dir():
         return data_dir
     raise FileNotFoundError(f"Split folder not found: {split_dir}")
-
-
-def build_class_index_map(dataset) -> dict[int, list[int]]:
-    class_to_indices: dict[int, list[int]] = defaultdict(list)
-    targets = getattr(dataset, "targets", None)
-    if targets is None:
-        targets = [label for _, label in dataset.samples]
-
-    for idx, label in enumerate(targets):
-        class_to_indices[int(label)].append(idx)
-    return class_to_indices
-
-
-def pick_one_per_class(class_to_indices: dict[int, list[int]], seed: int | None) -> dict[int, int]:
-    rng = random.Random(seed)
-    selected: dict[int, int] = {}
-
-    for class_idx, indices in class_to_indices.items():
-        if not indices:
-            continue
-        indices = list(indices)
-        rng.shuffle(indices)
-        selected[class_idx] = indices[0]
-
-    return selected
 
 
 def get_class_counts(dataset) -> dict[str, int]:
@@ -111,7 +94,16 @@ def fit_image_to_square(image, size: int = 512):
     return ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
 
 
-def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
+def resolve_class_sample_path(class_code: str) -> Path | None:
+    sample_path = CLASS_SAMPLE_PATHS.get(class_code, "").strip()
+    if not sample_path or sample_path == "random/path":
+        return None
+
+    path = Path(sample_path)
+    return path if path.is_file() else None
+
+
+def render_class_grid(dataset, out_path: Path) -> None:
     class_names = list(dataset.classes)
     if not class_names:
         raise ValueError("No classes found in the dataset")
@@ -120,8 +112,6 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
     if missing:
         raise ValueError(f"Dataset is missing expected classes: {missing}")
 
-    class_to_indices = build_class_index_map(dataset)
-    selected = pick_one_per_class(class_to_indices, seed=seed)
     class_counts = {class_code: FIXED_CLASS_COUNTS.get(class_code, 0) for class_code in GRID_ORDER}
     ordered_classes = sorted(
         GRID_ORDER,
@@ -146,17 +136,25 @@ def render_class_grid(dataset, out_path: Path, seed: int | None = None) -> None:
         ax.set_aspect("equal", adjustable="box")
         ax.set_box_aspect(1)
 
-        class_index = class_names.index(class_code)
-        sample_idx = selected.get(class_index)
         full_name = CLASS_NAME_MAP.get(class_code, class_code)
+        sample_path = resolve_class_sample_path(class_code)
 
-        if sample_idx is None:
-            ax.text(0.5, 0.5, class_code, ha="center", va="center", fontsize=13, fontweight="bold", color=PRIMARY_COLOR, transform=ax.transAxes)
+        if sample_path is None:
+            ax.text(
+                0.5,
+                0.5,
+                class_code,
+                ha="center",
+                va="center",
+                fontsize=13,
+                fontweight="bold",
+                color=PRIMARY_COLOR,
+                transform=ax.transAxes,
+            )
             ax.text(0.5, 0.06, full_name, ha="center", va="bottom", fontsize=11, transform=ax.transAxes, wrap=True)
             continue
 
-        image_path, _ = dataset.samples[sample_idx]
-        image = fit_image_to_square(load_image(Path(image_path)), size=512)
+        image = fit_image_to_square(load_image(sample_path), size=512)
         ax.imshow(image)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -253,7 +251,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create a publication-style dermatology figure with samples and class counts.")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Dataset root directory")
     parser.add_argument("--split", default="train", choices=["train", "val", "test"], help="Dataset split to visualize")
-    parser.add_argument("--seed", type=int, default=None, help="Optional random seed for sample selection")
     parser.add_argument("--output", default="dataset_class_samples.png", help="Output PNG path")
     args = parser.parse_args()
 
@@ -270,7 +267,7 @@ def main() -> None:
 
     dataset = datasets.ImageFolder(split_dir)
     out_path = Path(args.output)
-    render_class_grid(dataset, out_path=out_path, seed=args.seed)
+    render_class_grid(dataset, out_path=out_path)
     print(f"Saved visualization to {out_path.resolve()}")
 
 
